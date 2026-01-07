@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
+import time
 from PIL import Image, ImageTk
 import pygame
 
@@ -29,6 +30,10 @@ class TranslationApp:
         self.db = DatabaseManager()
         self.ai_service = TencentAIService()
         self.current_user_id = None  # 用于记录当前登录的用户 ID
+
+        # TTS 频率限制相关变量
+        self.last_tts_time = 0
+        self.TTS_COOLDOWN = 1.5  # 冷却时间（秒），防止频繁点击
 
         # 初始化音频混音器，用于播放合成的语音
         pygame.mixer.init()
@@ -102,7 +107,7 @@ class TranslationApp:
         content_frame.pack(expand=True, fill=tk.BOTH, padx=20, pady=20)
 
         # 左侧区域：OCR 图片文字识别
-        left_frame = tk.LabelFrame(content_frame, text="1. 图片文字识别")
+        left_frame = tk.LabelFrame(content_frame, text="图片文字识别")
         left_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5)
 
         btn_upload = tk.Button(left_frame, text="上传图片并识别 (OCR)", command=self.upload_and_ocr)
@@ -232,14 +237,29 @@ class TranslationApp:
         """
         text = self.txt_target.get(1.0, tk.END).strip()
         if not text: return
+
+        # 频率限制判断
+        current_time = time.time()
+        if current_time - self.last_tts_time < self.TTS_COOLDOWN:
+            print("TTS request skipped (throttled).")
+            messagebox.showwarning("提示", "操作过于频繁，请稍候")
+            return
+
+        self.last_tts_time = current_time
         voice_id = VOICE_MAP.get(self.combo_voice.get(), 101001)
 
         # 定义异步 TTS 线程任务
         def run_tts():
+            # 尝试停止当前正在播放的音频，释放资源
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
             file_path = self.ai_service.text_to_speech(text, voice_id)
             if file_path:
-                pygame.mixer.music.load(file_path)
-                pygame.mixer.music.play()
+                try:
+                    pygame.mixer.music.load(file_path)
+                    pygame.mixer.music.play()
+                except Exception as e:
+                    print(f"Pygame Play Error: {e}")
 
         threading.Thread(target=run_tts).start()
 

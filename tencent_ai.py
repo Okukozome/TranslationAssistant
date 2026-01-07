@@ -1,6 +1,9 @@
 # tencent_ai.py
 import base64
 import time
+import hashlib
+import os
+import tempfile
 from tencentcloud.common import credential
 from tencentcloud.common.profile.client_profile import ClientProfile
 from tencentcloud.common.profile.http_profile import HttpProfile
@@ -84,35 +87,53 @@ class TencentAIService:
 
     def text_to_speech(self, text, voice_type):
         """
-        语音合成 (TTS)。
+        语音合成 (TTS) - 重构版。
+        功能优化：
+        1. 使用 MD5 哈希生成文件名，避免重复请求和文件锁冲突。
+        2. 使用系统临时目录存储音频，避免污染项目目录。
+        3. 去除了上个版本 100 字符的硬性长度限制。
+
         :param text: 待转语音的文本内容
-        :param voice_type: 音色 ID（参考 VOICE_MAP）
+        :param voice_type: 音色 ID
         :return: 生成的 MP3 文件路径，若失败则返回 None。
         """
         try:
-            # 为了演示，对输入文本长度进行限制
-            if len(text) > 100: text = text[:100]
+            # 生成唯一的哈希文件名 (基于文本内容和音色)
+            # 这样相同的文本和音色组合不会重复调用 API，且不会导致文件写入锁死
+            hash_str = f"{text}_{voice_type}"
+            file_hash = hashlib.md5(hash_str.encode('utf-8')).hexdigest()
 
-            # 实例化 TTS 客户端
+            # 使用系统临时目录
+            temp_dir = tempfile.gettempdir()
+            file_name = f"tts_{file_hash}.mp3"
+            file_path = os.path.join(temp_dir, file_name)
+
+            # 检查缓存：如果文件已存在，直接返回路径（防抖动 + 节省额度 + 避免写入冲突）
+            if os.path.exists(file_path):
+                print(f"TTS Cache Hit: {file_path}")
+                return file_path
+
+            # 实例化 TTS 客户端 (仅在缓存未命中时执行)
             client = tts_client.TtsClient(self.cred, REGION)
-            # 构造语音合成请求
             req = tts_models.TextToVoiceRequest()
             req.Text = text
-            req.SessionId = str(int(time.time())) # 使用时间戳作为会话 ID
+            req.SessionId = str(int(time.time()))
             req.VoiceType = voice_type
             req.ModelType = 1
             req.Codec = "mp3"
 
-            # 获取响应
+            # 获取响应并写入临时文件
             resp = client.TextToVoice(req)
             if resp.Audio:
-                # 将返回的 Base64 语音数据解码并保存为本地文件
                 audio_data = base64.b64decode(resp.Audio)
-                file_path = "output_audio.mp3"
                 with open(file_path, "wb") as f:
                     f.write(audio_data)
                 return file_path
             return None
+
         except TencentCloudSDKException as err:
             print(f"TTS Error: {err}")
+            return None
+        except Exception as e:
+            print(f"System Error: {e}")
             return None
