@@ -2,3 +2,4 @@ tencentcloud-sdk-python
 mysql-connector-python
 pygame
 Pillow
+python-dotenv
