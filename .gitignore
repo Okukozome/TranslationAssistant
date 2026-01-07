@@ -1,0 +1,12 @@
+# --- 通用排除项 ---
+.env
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+.idea/
+build/
+dist/
+*.egg-info/
+*.spec
