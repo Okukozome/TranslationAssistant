@@ -91,13 +91,19 @@ class TencentAIService:
         功能优化：
         1. 使用 MD5 哈希生成文件名，避免重复请求和文件锁冲突。
         2. 使用系统临时目录存储音频，避免污染项目目录。
-        3. 去除了上个版本 100 字符的硬性长度限制。
+        3. 100 字符长度截断，适配免费非长文本 API 的请求长度要求。
 
         :param text: 待转语音的文本内容
         :param voice_type: 音色 ID
         :return: 生成的 MP3 文件路径，若失败则返回 None。
         """
         try:
+            # 腾讯云免费 TTS 接口单次请求不支持长文本
+            # 为了防止 'TextTooLong' 异常，此处强制截断前 100 个字符
+            if len(text) > 100:
+                print(f"Warning: Text length ({len(text)}) exceeds limit, truncating to 100 chars.")
+                text = text[:100]
+
             # 生成唯一的哈希文件名 (基于文本内容和音色)
             # 这样相同的文本和音色组合不会重复调用 API，且不会导致文件写入锁死
             hash_str = f"{text}_{voice_type}"
